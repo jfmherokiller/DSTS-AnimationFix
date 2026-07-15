@@ -1,0 +1,7 @@
+bin/
+obj/
+*.user
+dump/
+nlst_all/
+__pycache__/
+*.pyc
