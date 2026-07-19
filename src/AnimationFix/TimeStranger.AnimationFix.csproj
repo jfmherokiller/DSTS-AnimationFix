@@ -1,0 +1,28 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Version>0.4.0</Version>
+    <LangVersion>12.0</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <CopyLocalLockFileAssemblies>true</CopyLocalLockFileAssemblies>
+    <OutputPath Condition="'$(RELOADEDIIMODS)' != ''">$(RELOADEDIIMODS)/timestranger.noah.animationfix</OutputPath>
+    <OutputPath Condition="'$(RELOADEDIIMODS)' == ''">$(MSBuildProjectDirectory)/bin/mod</OutputPath>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Content Include="ModConfig.json" CopyToOutputDirectory="Always" />
+    <Content Include="README.md" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="AnimationFallbacks.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Reloaded.Mod.Interfaces" Version="2.4.0" ExcludeAssets="runtime" />
+    <PackageReference Include="Reloaded.SharedLib.Hooks" Version="1.9.0" />
+    <PackageReference Include="Reloaded.Memory.SigScan.ReloadedII.Interfaces" Version="1.2.0" />
+  </ItemGroup>
+
+</Project>

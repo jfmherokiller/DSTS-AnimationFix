@@ -1,0 +1,94 @@
+{
+  "schemaVersion": 1,
+  "_comment": "Profiles are opt-in by model prefix. Candidates may be suffixes, complete <model>_<motion>.anim filenames, or paths ending in those filenames. Rules are evaluated in order. Restart the game after editing.",
+  "_commentAdvanced": "Existing motions are replaced only when Reloaded II's Enable Advanced Character Overrides setting is on AND the matching rule has overrideExisting=true. A '*' profile is also locked behind that setting.",
+  "profiles": {
+    "chr090": {
+      "description": "Guilmon baseline. fn02_01 is treated as native neutral; fq01 as field-safe idle; fq02/fe01 as contextual gestures; bn01 as the last-resort neutral battle idle.",
+      "enabled": true,
+      "logUnmatched": true,
+      "ignoreExact": [
+        "chr090"
+      ],
+      "roles": {
+        "idle": [
+          "fn02_01",
+          "fq01",
+          "bn01"
+        ],
+        "movement": [
+          "fn02_01",
+          "fq01",
+          "bn01"
+        ],
+        "gesture": [
+          "fq02",
+          "fe01",
+          "fn02_01",
+          "fq01",
+          "bn01"
+        ],
+        "cutscene": [
+          "fe01",
+          "fq02",
+          "fn02_01",
+          "fq01",
+          "bn01"
+        ],
+        "fallback": [
+          "fn02_01",
+          "fq01",
+          "bn01"
+        ]
+      },
+      "rules": [
+        {
+          "match": "exact",
+          "pattern": "fn01_01",
+          "role": "idle",
+          "overrideExisting": false
+        },
+        {
+          "match": "prefix",
+          "pattern": "fw",
+          "role": "movement"
+        },
+        {
+          "match": "prefix",
+          "pattern": "fr",
+          "role": "movement"
+        },
+        {
+          "match": "prefix",
+          "pattern": "m",
+          "role": "cutscene"
+        },
+        {
+          "match": "prefix",
+          "pattern": "head_",
+          "role": "gesture"
+        },
+        {
+          "match": "prefix",
+          "pattern": "fg",
+          "role": "gesture"
+        },
+        {
+          "match": "prefix",
+          "pattern": "e",
+          "role": "gesture"
+        },
+        {
+          "match": "prefix",
+          "pattern": "ui",
+          "role": "gesture"
+        },
+        {
+          "match": "any",
+          "pattern": "*",
+          "role": "fallback"
+        }
+      ]
+    }
+  }
+}
