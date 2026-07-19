@@ -1,95 +1,84 @@
-# CLAUDE.md
-
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+# AnimationFixes Working Context
 
 ## Goal
 
-Fix the **animation problem** for the Digimon Story: Time Stranger *player model swap* mod: when the
-player character's model is swapped to a Digimon, player-specific animations don't map onto the Digimon
-skeleton, causing **T-poses** (bind pose) — most visibly in cutscenes, the digivice menu, and any
-look-at/facial animation. This repo is a follow-up effort dedicated to that animation issue; the model
-swap itself already works.
+Replace missing player-specific motions on a swapped Digimon with a native idle or other safe motion,
+so the model does not remain in a bind/T-pose. Keep all work and discoveries in this repository.
 
-## Background: the model swap mod (already working — do NOT re-solve)
+The model swap itself is already implemented in
+`E:\ReverseEngineProjects\TimeStranger\DSTS-PlayerModelSwap`; do not recreate it here.
 
-The swap ships as a **native Reloaded II C# mod**:
-- Source: `E:\ReverseEngineProjects\TimeStranger\PlayerModelSwap`
-- Installed/built to: `C:\Reloaded-II\Mods\timestranger.noah.playermodelswap` (ModDll
-  `TimeStranger.PlayerModelSwap.dll`)
-- Read its `README.md` there for the full design.
+## Current result
 
-How the swap works (context you'll need): it hooks **`FieldPlayer_ResolveModelRef`** (`0x1409ADEE0`)
-and, per resolve, transiently sets the game's own change-model fields on the FieldPlayerSystem
-(`+480` = key `90000+digimonId`, `+477` = flag), calls the original so the game fills the model
-string+ref consistently from the `player_change_model` MBE table, then restores the fields. This is
-**save-safe** (flag never persists) and **HUD-safe**. The `player_change_model` rows for all 582 Digimon
-are shipped in the mod's `mvgl-loader/` and loaded by `MVGL.FileLoader.Reloaded`. A second hook
-null-guards a cutscene look-at blend (`sub_140222560`) that crashed when a Digimon rig lacks the
-player's `head` aim bone. Digimon model code = `chr` + zero-padded id (Agumon 50 → `chr050`).
+`src/AnimationFix` is a standalone Reloaded II prototype. It hooks final named-animation playback and
+calls the game's real lookup before changing anything. A real null result is considered only when the
+active model has an enabled profile in `AnimationFallbacks.json`. Ordered rules classify missing
+suffixes into roles, and ordered native candidate lists select the first resource the animator really
+has loaded. Loaded base/patch/DLC resources remain authoritative.
 
-Full RE notes for the swap live in `E:\ReverseEngineProjects\TimeStranger\CLAUDE.md`.
+Candidate values are not limited to known game suffixes. A profile can reference `custom_idle`,
+`chr090_custom_idle.anim`, or a loader-relative path ending in that filename. The hook normalizes all
+three to the suffix expected by the animator lookup. A future asset loader must still make the custom
+motion available in that animator's resource list; the fallback mod intentionally does not pretend an
+unloaded resource exists.
 
-## The animation problem (what we learned)
+Existing-animation replacement is an advanced, double-gated path. Reloaded II's
+`EnableAdvancedCharacterOverrides` must be true and the matched profile rule must declare
+`overrideExisting: true`. The same setting unlocks a wildcard `"*"` profile. With the setting off,
+valid native animations are always preserved and wildcard profiles are ignored. Profiles identify a
+model, not one object instance, so an exact `chrNNN` profile affects every animator using that model.
 
-- The game applies the **player's humanoid animation rig** to whatever model sits in the player slot.
-- Body animation **retargets by bone ROLE**, so structurally-humanoid Digimon (Agumon, Guilmon, Leomon…)
-  animate acceptably. Non-humanoid Digimon (quadrupeds, blobs, flyers) T-pose broadly.
-- Some features use **exact bone names**, not roles: the look-at/aim constraint targets a bone literally
-  named `head` (player) vs `CP01` (Digimon, from `model_setting.mbe` col53/col80), and facial expression
-  bones the Digimon simply don't have. These **fail for ALL Digimon** regardless of humanoid-ness.
-- Animations are per-skeleton `.anim` files named `<skeleton>_<animname>.anim` (e.g. `pc001a_e003.anim`,
-  `chr050_ba01.anim`). The player and Digimon have largely **disjoint animation vocabularies** (player:
-  `e0xx` expressions, `fg0x`/`head_*` gestures, `m0xx_yyy` cutscene motions, `r<NNN>` ride sets; Digimon:
-  `chrNNN_ba/bd/bf/bg` battle anims).
-- Skeleton bone lists are the **`.nlst` files** — plaintext, one bone per line: `name, hash, parenthash,
-  joint`. Player `pc001a.nlst` = 112 bones with human naming (`head`, `l_arm`, `r_hand`, `l_knee`).
-  Digimon use `J_` naming (`J_arm_r`, `J_head`). See `data/example_*.nlst`.
+This catches direct, blended, reset, and Lua/event motion paths without forcing a global idle or
+needing a fragile cutscene-state flag. It does not modify valid native animations. Candidate choices
+are cached by model and role so resource load order cannot make one model alternate between `fq01`
+and `bn01` during the same session.
 
-### Compatibility tiers (already computed)
-`data/PLAYER_ANIM_COMPATIBILITY.csv` ranks 532 Digimon by humanoid-bone-role completeness (15 roles:
-head/neck/spine + L/R arm/elbow/hand/leg/knee/foot). Tiers A(15/15) B(12-14) C(9-11) D(5-8) F(<5). The
-mod's dropdown is already prefixed with these grades (`A_Agumon`, `F_Airdramon`). Regenerate the mod's
-enum with `scripts/gen_cs2.py`.
+## Key static trace
 
-## Approaches considered (and their ceilings)
-- **Force player anims onto Digimon** — infeasible; the game already does this and it's the T-pose.
-- **Force idle** — no clean chokepoint; would need cutscene detection (unsolved: no readable
-  "is-event-playing" flag found) or would freeze the model in the field too.
-- Likely real fixes to explore here: **bone retargeting / remap** (map player bone names → Digimon
-  equivalents, e.g. `head`→`J_head`, `CP01`→player head, per-skeleton), or supplying/substituting the
-  missing bones. Add the follow-up plan under "Ideas" below.
+- `RegisterLua_MotionBindings` `0x140A8FDC0`
+- `Lua_Motion_PlayMotion` `0x140A690E0`
+- `MotionController_PlayMotion` `0x1401B4290`
+- `MotionController_PlayMotionBlend` `0x1401B4540`
+- `MotionController_ResolveAndQueueMotion` `0x1401C1770`
+- `MotionRequest_SetByName` `0x1401C27D0`
+- `Animator_PlayMotionByName` `0x140269E80` — prototype hook target
+- `Animator_FindMotionByName` `0x140268B90` — actual miss decision, called without detouring it
 
-## Tools & environment
-- **IDA Pro** with the game exe loaded, reachable via the `ida-pro-mcp` MCP tools. Imagebase
-  `0x140000000` (may be rebased if a debugger is attached — convert with the live base). Confirm with
-  `server_health` first.
-- **MbeDumper** — `E:\ReverseEngineProjects\TimeStranger\MbeDumper` (.NET 9). Modes:
-  `list <mvgl> [substr]`, `dump <mvgl> <mbeSubstr> <outDir>` (MBE→CSV), `extract <mvgl> <substr> <outDir>`,
-  `extractregex <mvgl> <regex> <outDir>` (used to bulk-pull `.nlst`), `testap` (verify MBE CSV appends).
-  Build: `dotnet build MbeDumper/MbeDumper.csproj -c Release`.
-- **Game archives**: `E:\SteamLibrary\steamapps\common\Digimon Story Time Stranger\gamedata\`. Base data
-  = `app_0.dx11.mvgl`; `patch.dx11.mvgl` overlays it (patch wins). `addcont_*` = DLC.
-- **unluac** (`E:\ReverseEngineProjects\TimeStranger\tools\unluac.jar`) for decompiling the game's Lua
-  5.2 bytecode; validate Lua edits with the `luaparser` pip package.
-- Reloaded C# hooks: sig-scan (`IStartupScanner.AddMainModuleScan`) + `IReloadedHooks.CreateHook`.
+The higher resolver has an internal by-value request object in its final stack argument; Hex-Rays
+currently reduces that object to `char`. Do not managed-hook it with the apparent decompiler
+prototype. Playback has a verified simple five-argument ABI. The lookup has a simple three-argument
+ABI and returns the resolved motion pointer or null; it is not hooked because other callers use it as
+an existence probe.
 
-## Key addresses / functions
-- `FieldPlayer_ResolveModelRef` `0x1409ADEE0` — player model resolve (hooked by the swap).
-- Look-at/aim blend `sub_140222560` (faults at `0x140222589`, `movss [rbx+1B8h]`, rbx=null v6) —
-  null-guarded by the swap; this is the `head`-bone constraint.
-- Motion system (Lua-bound in `sub_140A8FDC0`): `Motion_PlayMotion` = `sub_140A690E0` →
-  `sub_1401B4290` → `sub_1401C1770` (plays by index/ref); also `Motion_ChangeExpression`,
-  `Motion_AimOnlyThisFrame`, `Motion_PlayMotionBlend`.
-- `model_setting.mbe` col53/col80 = aim/head bone name (player `head`, Digimon `CP01`).
+See `docs/RE-NOTES.md` for signatures and detailed evidence.
 
-## Scripts (in `scripts/`, Windows absolute paths inside — adjust as needed)
-- `compat.py` — exact bone-NAME overlap vs player (proves only human models match by name).
-- `compat2.py` — humanoid-ROLE scoring (the real ranking → `PLAYER_ANIM_COMPATIBILITY.csv`).
-- `gen_cs2.py` — regenerate the mod's `Digimon.g.cs` enum with tier prefixes.
-- `gen_config.py` — (from the old ReMIX mod) generate `player_change_model` CSV rows.
-They read extracted CSV/nlst from `E:\ReverseEngineProjects\TimeStranger\dump\`; re-extract with
-MbeDumper if that folder is gone (e.g. `extractregex app_0.dx11.mvgl "^(chr[0-9]+|pc001a)\.nlst$" out`).
+## Build and distribution
 
-## Ideas (fill in the follow-up plan)
-> Placeholder for the animation-fix approach to pursue here (e.g. bone-name remap table, skeleton
-> substitution, per-Digimon anim overrides). Add design + steps as you go.
+`build.ps1` mirrors the Player Model Swap repository. It removes only this repository's `dist/`,
+builds Release into `dist/timestranger.noah.animationfix/`, and creates
+`dist/timestranger.noah.animationfix.zip` for Nexus Mods distribution.
+
+## Data facts
+
+- Animation assets are named `<model-or-skeleton>_<motion>.anim`.
+- Digimon do have field motion sets; the old claim that their vocabulary was battle-only was wrong.
+- The game explicitly preloads `fq01` during model resource preparation (`0x140AB8F12`).
+- Guilmon also owns `fn02_01`, `fq02`, and `fe01`-`fe04`. Static callers use `fq02` as a temporary
+  contextual motion, supporting its gesture role rather than neutral-idle use.
+- `bn01` is the last-resort neutral/battle candidate.
+- Requests where the suffix equals the model name, such as `chr090_chr090`, are base alias probes and
+  are never remapped.
+- `scripts/generate_motion_manifest.ps1` scans `app_0`, `patch`, and non-text `addcont_*` archives for
+  research/coverage reporting. The runtime hook does not depend on the generated list.
+
+## Related unresolved work
+
+The missing-motion fallback does not solve exact-bone systems such as facial expression and look-at
+constraints. The main model-swap mod already null-guards the known look-at crash at `0x140222560`.
+True facial/bone retargeting remains a separate future problem.
+
+## IDA safety
+
+Use targeted decompilation and xrefs only; avoid whole-binary sweeps. Static image base is
+`0x140000000`. Save the IDB after naming/comment changes. The IDB froze previously and lost eight
+recent Analyze names; they were restored and saved on 2026-07-19.
